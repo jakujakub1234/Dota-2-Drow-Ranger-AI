@@ -1,0 +1,2054 @@
+
+local MyTeam = GetTeam();
+
+------------------------------------------
+
+local DrowRanger = GetBot();
+local Debug_Player = GetTeamMember(1);
+local EnemyTeam = GetOpposingTeam();
+ 
+--local Jungle = GetNeutralSpawners(); function GetNeutralSpawners() doesnt work
+-- 0 -> normal creeps, 1 -> ancient creeps
+local Jungle = {{Vector(-3803,788),0}, {Vector(-4772,-368),0}, {Vector(-2648,-530),1}, {Vector(-1843,-4150),0}, {Vector(163,-1958),0}, {Vector(-108,-3433),0}, {Vector(492,-4611),0}, {Vector(3066,-4615),0}, {Vector(4429,-4318),0}, {Vector(3941,-445),1}, {Vector(2657,116),0}, {Vector(4187,736),0}, {Vector(-840,2313),0}, {Vector(1270,3389),0}, {Vector(-238,3437),0}, {Vector(-1697,4380),0}, {Vector(-2624,4785),0}, {Vector(-4283,3525),0}}; 
+
+-- Locations at map
+local RadiantShop = Vector(-4739,1263);
+local DireShop = Vector(4559,-1554);
+local BotShop = Vector(7253,-4128);
+local TopShop = Vector(-7236,4444);
+local SecretShopTop = Vector(-4794,1271);
+local SecretShopBot = Vector(4647,-1549);
+
+local Radiant_TopShrine = Vector(-4474,138);
+local Radiant_BotShrine = Vector(1176,-4247);
+local Dire_TotShrine = Vector(-1214,3847);
+local Dire_BotShrine = Vector(3314,164);
+
+local RuneTop = Vector(-1713,1162);
+local RuneBot = Vector(2413,-1863);
+local Radiant_BountyTop = Vector(-4362,1587);
+local Radiant_BountyBot = Vector(3694,-3621);
+local Dire_BountyTop = Vector(-3073,3691);
+local Dire_BountyBot = Vector(4127,-1766);
+local Middle_Point = Vector(-502, -346);
+
+local Frost_Arrow = DrowRanger:GetAbilityByName("drow_ranger_frost_arrows");
+local Silence = DrowRanger:GetAbilityByName("drow_ranger_wave_of_silence");
+local Aura = DrowRanger:GetAbilityByName("drow_ranger_trueshot");
+
+local Top_GankingSpot = Vector(-5300,4250);
+local Bot_GankingSpot = Vector(5250,-3900);
+
+local Game_State="early";
+
+rune_checker=false;
+rune_timer=0;
+
+if(MyTeam == 2) then
+  team_changer=-1;
+  MySecretShop=SecretShopTop;
+  MyShop= GetShopLocation( MyTeam, SHOP_HOME );
+  MyBountyTop=Radiant_BountyTop;
+  MyBountyBot=Radiant_BountyBot;
+  MyShrineTop=Radiant_TopShrine;
+  MyShrineBot=Radiant_BotShrine;
+  
+  EnemySecretShop=SecretShopBot;
+  EnemyShop=DireShop;
+  EnemyBountyTop=Dire_BountyTop;
+  EnemyBountyBot=Dire_BountyBot;
+  EnemyShrineTop=Dire_TopShrine;
+  EnemyShrineBot=Dire_BotShrine;
+end
+
+if(MyTeam == 3) then
+  team_changer=1;
+  MySecretShop=SecretShopBot;
+  MyShop= GetShopLocation( MyTeam, SHOP_HOME );
+  MyBountyTop=Dire_BountyTop;
+  MyBountyBot=Dire_BountyBot;
+  MyShrineTop=Dire_TopShrine;
+  MyShrineBot=Dire_BotShrine;
+  
+  EnemySecretShop=SecretShopTop;
+  EnemyShop=RadiantShop;
+  EnemyBountyTop=Radiant_BountyTop;
+  EnemyBountyBot=Radiant_BountyBot;
+  EnemyShrineTop=Radiant_TopShrine;
+  EnemyShrineBot=Radiant_BotShrine;
+end
+
+local Level;  -- my level
+local Range;  --my attack range 
+local Attack; --my attack damage
+local Creep_target; --creep to attack
+local Rune_to_get;  --rune to take
+local Enemy_Hero;   --enemy hero to attack
+local Enemy_turret; --enemy turrat to attack
+local Friendly_turret;
+local Friend_in_teamfight; --friend in teamfight
+local Going_back=false; --true, when bot going back to base
+local Ping_timer=0;     --time to next ping
+local ItemToDrop;       
+local have_tango=true; 
+
+local Mid_Opponent=nil;
+local knew_mid_opponent=false;
+local game_style=0; -- 1 -> aggressive, 0 -> defensive
+
+local enemy_hide=false; --true, if an opponent with low hp is in the fog
+local enemy_hideout;    --the last known location of the abovementioned opponent
+local enemy_hp_remembered; -- last known hp of the abovementioned opponent
+
+-- helper functions
+
+function Real_Damage(armor, damage)
+  return (damage - damage * ((0.052*armor) / (0.9 + (0.048 * armor))))
+end
+
+function ClosestAliveMidTurret()
+  if(GetTower(MyTeam, TOWER_MID_1) ~= nil) then
+    return (GetTower(MyTeam, TOWER_MID_1));
+  end
+  if(GetTower(MyTeam, TOWER_MID_2) ~= nil) then
+    return (GetTower(MyTeam, TOWER_MID_2));
+  end
+  if(GetTower(MyTeam, TOWER_MID_3) ~= nil) then
+    return (GetTower(MyTeam, TOWER_MID_3));
+  end
+  if(GetBarracks( MyTeam, BARRACKS_MID_RANGED ) ~= nil) then
+    return (GetBarracks( MyTeam, BARRACKS_MID_RANGED ));
+  end
+  if(GetBarracks( MyTeam, BARRACKS_MID_MELEE ) ~= nil) then
+    return (GetBarracks( MyTeam, BARRACKS_MID_MELEE ));
+  end
+  if(GetTower(MyTeam, TOWER_BASE_1) ~= nil) then
+    return (GetTower(MyTeam, TOWER_BASE_1));
+  end
+  if(GetTower(MyTeam, TOWER_BASE_2) ~= nil) then
+    return (GetTower(MyTeam, TOWER_BASE_2));
+  end
+  return GetAncient(MyTeam);
+end
+
+function ClosestAliveTopTurret()
+  if(GetTower(MyTeam, TOWER_TOP_1) ~= nil) then
+    return (GetTower(MyTeam, TOWER_TOP_1));
+  end
+  if(GetTower(MyTeam, TOWER_TOP_2) ~= nil) then
+    return (GetTower(MyTeam, TOWER_TOP_2));
+  end
+  if(GetTower(MyTeam, TOWER_TOP_3) ~= nil) then
+    return (GetTower(MyTeam, TOWER_TOP_3));
+  end
+  if(GetBarracks( MyTeam, BARRACKS_TOP_RANGED ) ~= nil) then
+    return (GetBarracks( MyTeam, BARRACKS_TOP_RANGED ));
+  end
+  if(GetBarracks( MyTeam, BARRACKS_TOP_MELEE ) ~= nil) then
+    return (GetBarracks( MyTeam, BARRACKS_TOP_MELEE ));
+  end
+  if(GetTower(MyTeam, TOWER_BASE_1) ~= nil) then
+    return (GetTower(MyTeam, TOWER_BASE_1));
+  end
+  if(GetTower(MyTeam, TOWER_BASE_2) ~= nil) then
+    return (GetTower(MyTeam, TOWER_BASE_2));
+  end
+  return GetAncient(MyTeam);
+end
+
+function ClosestAliveBotTurret()
+  if(GetTower(MyTeam, TOWER_BOT_1) ~= nil) then
+    return (GetTower(MyTeam, TOWER_BOT_1));
+  end
+  if(GetTower(MyTeam, TOWER_BOT_2) ~= nil) then
+    return (GetTower(MyTeam, TOWER_BOT_2));
+  end
+  if(GetTower(MyTeam, TOWER_BOT_3) ~= nil) then
+    return (GetTower(MyTeam, TOWER_BOT_3));
+  end
+  if(GetBarracks( MyTeam, BARRACKS_BOT_RANGED ) ~= nil) then
+    return (GetBarracks( MyTeam, BARRACKS_BOT_RANGED ));
+  end
+  if(GetBarracks( MyTeam, BARRACKS_BOT_MELEE ) ~= nil) then
+    return (GetBarracks( MyTeam, BARRACKS_BOT_MELEE ));
+  end
+  if(GetTower(MyTeam, TOWER_BASE_1) ~= nil) then
+    return (GetTower(MyTeam, TOWER_BASE_1));
+  end
+  if(GetTower(MyTeam, TOWER_BASE_2) ~= nil) then
+    return (GetTower(MyTeam, TOWER_BASE_2));
+  end
+  return GetAncient(MyTeam);
+end
+
+function ClosestEnemyMidAliveTurret()
+  if(GetTower(EnemyTeam, TOWER_MID_1) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_MID_1));
+  end
+  if(GetTower(EnemyTeam, TOWER_MID_2) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_MID_2));
+  end
+  if(GetTower(EnemyTeam, TOWER_MID_3) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_MID_3));
+  end
+  if(GetBarracks( EnemyTeam, BARRACKS_MID_RANGED ) ~= nil) then
+    return (GetBarracks( EnemyTeam, BARRACKS_MID_RANGED ));
+  end
+  if(GetBarracks( EnemyTeam, BARRACKS_MID_MELEE ) ~= nil) then
+    return (GetBarracks( EnemyTeam, BARRACKS_MID_MELEE ));
+  end
+  if(GetTower(EnemyTeam, TOWER_BASE_1) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_BASE_1));
+  end
+  if(GetTower(EnemyTeam, TOWER_BASE_2) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_BASE_2));
+  end
+  return GetAncient(EnemyTeam);
+end
+
+function ClosestEnemyTopAliveTurret()
+  if(GetTower(EnemyTeam, TOWER_TOP_1) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_TOP_1));
+  end
+  if(GetTower(EnemyTeam, TOWER_TOP_2) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_TOP_2));
+  end
+  if(GetTower(EnemyTeam, TOWER_TOP_3) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_TOP_3));
+  end
+  if(GetBarracks( EnemyTeam, BARRACKS_TOP_RANGED ) ~= nil) then
+    return (GetBarracks( EnemyTeam, BARRACKS_TOP_RANGED ));
+  end
+  if(GetBarracks( EnemyTeam, BARRACKS_TOP_MELEE ) ~= nil) then
+    return (GetBarracks( EnemyTeam, BARRACKS_TOP_MELEE ));
+  end
+  if(GetTower(EnemyTeam, TOWER_BASE_1) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_BASE_1));
+  end
+  if(GetTower(EnemyTeam, TOWER_BASE_2) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_BASE_2));
+  end
+  return GetAncient(EnemyTeam);
+end
+
+function ClosestEnemyBotAliveTurret()
+  if(GetTower(EnemyTeam, TOWER_BOT_1) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_BOT_1));
+  end
+  if(GetTower(EnemyTeam, TOWER_BOT_2) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_BOT_2));
+  end
+  if(GetTower(EnemyTeam, TOWER_BOT_3) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_BOT_3));
+  end
+  if(GetBarracks( EnemyTeam, BARRACKS_BOT_RANGED ) ~= nil) then
+    return (GetBarracks( EnemyTeam, BARRACKS_BOT_RANGED ));
+  end
+  if(GetBarracks( EnemyTeam, BARRACKS_BOT_MELEE ) ~= nil) then
+    return (GetBarracks( EnemyTeam, BARRACKS_BOT_MELEE ));
+  end
+  if(GetTower(EnemyTeam, TOWER_BASE_1) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_BASE_1));
+  end
+  if(GetTower(EnemyTeam, TOWER_BASE_2) ~= nil) then
+    return (GetTower(EnemyTeam, TOWER_BASE_2));
+  end
+  return GetAncient(EnemyTeam);
+end 
+
+function ClosestFriendlyTurret()
+  Top = ClosestAliveTopTurret();
+  Bot = ClosestAliveBotTurret();
+  Mid = ClosestAliveMidTurret();
+  
+  if(GetUnitToUnitDistance(DrowRanger,Top) < GetUnitToUnitDistance(DrowRanger,Bot)) then
+    if(GetUnitToUnitDistance(DrowRanger,Top) < GetUnitToUnitDistance(DrowRanger,Mid)) then
+      return Top;
+    end
+    return Mid;
+  end
+  if(GetUnitToUnitDistance(DrowRanger,Bot) < GetUnitToUnitDistance(DrowRanger,Mid)) then
+    return Bot;
+  end
+  return Mid;
+end
+
+function ClosestEnemyTurret()
+  Top = ClosestEnemyTopAliveTurret();
+  Bot = ClosestEnemyBotAliveTurret();
+  Mid = ClosestEnemyMidAliveTurret();
+  
+  if(GetUnitToUnitDistance(DrowRanger,Top) < GetUnitToUnitDistance(DrowRanger,Bot)) then
+    if(GetUnitToUnitDistance(DrowRanger,Top) < GetUnitToUnitDistance(DrowRanger,Mid)) then
+      return Top;
+    end
+    return Mid;
+  end
+  if(GetUnitToUnitDistance(DrowRanger,Bot) < GetUnitToUnitDistance(DrowRanger,Mid)) then
+    return Bot;
+  end
+  return Mid;
+end
+
+function KDRatio()
+  return (GetHeroKills(3) - GetHeroDeaths(3))/GetHeroDeaths(3);
+end
+
+function DropItems()
+    
+  DrowRanger:Action_DropItem(ItemToDrop, (DrowRanger:GetLocation()+Vector(10,10,0))); 
+      
+end
+
+function CanDropItems()
+    IronBranch=nil;
+    Slippers=nil;
+    WraithBand=nil;
+    Tango=nil;
+    DragonLance=nil;
+    ShadowBlade=nil;
+    Mealstorm=nil;
+    
+    IronBranch = DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_branches"));
+    Slippers = DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_slippers"));
+    WraithBand=DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_wraith_band"));
+    Tango=DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_tango"));
+    DragonLance=DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_dragon_lance"));
+    ShadowBlade=DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_invis_sword"));
+    Maelstorm=DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_maelstrom"));
+    
+    
+    if(DragonLance==nil) then
+      return false;
+    end
+    
+    if(IronBranch~=nil) then
+      ItemToDrop=IronBranch;
+      return true;
+    end
+    
+    if(Slippers~=nil and ShadowBlade~=nil) then
+      ItemToDrop=Slippers;
+      return true;
+    end
+    
+    if(WraithBand~=nil and Maelstorm~=nil) then
+      ItemToDrop=WraithBand;
+      return true;
+    end
+    
+    if(Tango~=nil and Maelstorm~=nil) then
+      ItemToDrop=Tango;
+      return true;
+    end
+    
+end
+
+function GetNearbyRune()
+  if(GetUnitToLocationDistance(DrowRanger, GetRuneSpawnLocation(RUNE_POWERUP_1)) < 500 and GetRuneStatus(RUNE_POWERUP_1) == RUNE_STATUS_AVAILABLE) then
+    Rune_to_get=RUNE_POWERUP_1;
+    return true;
+  end
+  
+  if(GetUnitToLocationDistance(DrowRanger, GetRuneSpawnLocation(RUNE_POWERUP_2)) < 500 and GetRuneStatus(RUNE_POWERUP_2) == RUNE_STATUS_AVAILABLE) then
+    Rune_to_get=RUNE_POWERUP_2;
+    return true;
+  end
+  
+  if(GetUnitToLocationDistance(DrowRanger, GetRuneSpawnLocation(RUNE_BOUNTY_1)) < 500 and GetRuneStatus(RUNE_BOUNTY_1) == RUNE_STATUS_AVAILABLE) then
+    Rune_to_get=RUNE_BOUNTY_1;
+    return true;
+  end
+  
+  if(GetUnitToLocationDistance(DrowRanger, GetRuneSpawnLocation(RUNE_BOUNTY_2)) < 500 and GetRuneStatus(RUNE_BOUNTY_2) == RUNE_STATUS_AVAILABLE) then
+    Rune_to_get=RUNE_BOUNTY_2;
+    return true;
+  end
+  
+  if(GetUnitToLocationDistance(DrowRanger, GetRuneSpawnLocation(RUNE_BOUNTY_3)) < 500 and GetRuneStatus(RUNE_BOUNTY_3) == RUNE_STATUS_AVAILABLE) then
+    Rune_to_get=RUNE_BOUNTY_3;
+    return true;
+  end
+  
+  if(GetUnitToLocationDistance(DrowRanger, GetRuneSpawnLocation(RUNE_BOUNTY_4)) < 500 and GetRuneStatus(RUNE_BOUNTY_4) == RUNE_STATUS_AVAILABLE) then
+    Rune_to_get=RUNE_BOUNTY_4;
+    return true;
+  end
+
+end
+
+function IsTeamfightSomewhere()
+  for i=1,5 do
+    Allie = GetTeamMember(i);
+    if(not(Allie == DrowRanger)) then
+      if(table.getn(Allie:GetNearbyHeroes(1000,true,BOT_MODE_NONE))>2 and table.getn(Allie:GetNearbyHeroes(1000,false,BOT_MODE_NONE))>1 and GetUnitToUnitDistance(DrowRanger,Allie) > 2000 and GetUnitToUnitDistance(DrowRanger,Allie) < 10000) then
+        Friend_in_teamfight=Allie;
+        return true;
+      end
+    end
+  end
+  return false;
+end
+
+function ClosestAllie()
+  Final_allie=nil;
+  for i=1,5 do
+    Allie = GetTeamMember(i);
+    distance=1/0;
+    if(not(Allie == DrowRanger)) then
+      if(GetUnitToUnitDistance(DrowRanger,Allie)<distance and GetUnitToUnitDistance(DrowRanger,Allie)<5000 and GetUnitToUnitDistance(Enemy_turret,Allie) < 10000) then
+        Final_allie=Allie;
+      end
+    end
+  end
+  return Final_allie;
+end
+
+-- ganking phase helpers
+
+local ganking_time=0;
+local this_time_ganking=false;
+local lane_to_gank="";
+local go_to_gank=false;
+local time_of_killing=0;
+
+-- Mid Game helpers
+
+local rest_after_pushing=false;
+local go_to_push=false;
+local pushing_lane=false;
+local lane_to_push="";
+
+local hunting=false;
+local hunting_place = Vector(0,0);
+
+local Old_Enemy_Turret=ClosestAliveBotTurret();
+--------------------------------------
+
+function Think()
+  Level = DrowRanger:GetLevel();
+  Range = DrowRanger:GetAttackRange();
+  Attack = DrowRanger:GetAttackDamage();
+  
+  --Debug Messages
+  --[[
+  DebugDrawText( 1000.0, 100.0, ("Actual game state: " .. Game_State) , 255, 0, 0);
+  DebugDrawText( 1000.0, 150.0, ("time of next gank: " .. tostring(ganking_time)) , 255, 0, 0);
+  DebugDrawText( 1000.0, 200.0, ("farm: " .. tostring(DrowRanger:GetLastHits())) , 255, 0, 0);
+  DebugDrawText( 1000.0, 250.0, ("denies: " .. tostring(DrowRanger:GetDenies())) , 255, 0, 0);
+  DebugDrawText( 1000.0, 300.0, ("is enemy hide: " .. tostring(enemy_hide)) , 255, 0, 0);
+  DebugDrawText( 1000.0, 350.0, ("Foe Hp: " .. tostring(enemy_hp_remembered)) , 255, 0, 0);  
+  DebugDrawText( 1000.0, 400.0, ("Foe: " .. tostring(Enemy_Hero)) , 255, 0, 0);
+  DebugDrawText( 1000.0, 450.0, ("Debug Location: " .. tostring(DrowRanger:GetLocation())) , 255, 0, 0);
+  --]]
+ 
+  
+  if(KDRatio() > 2) then
+    game_style=1;
+  end
+  
+  if(KDRatio() < 0) then
+    game_style=0;
+  end
+  
+  
+  if(not(knew_mid_opponent)) then
+    if(GetUnitToLocationDistance(DrowRanger, Middle_Point)<700) then
+      Enemies=DrowRanger:GetNearbyHeroes(1599, true, BOT_MODE_NONE);
+      if(Enemies[1]~=nil) then
+        knew_mid_opponent=true;
+        Mid_Opponent=Enemies[1];
+        if(Mid_Opponent:GetAttackRange() < Range) then
+          game_style=1;
+        else
+          game_style=0;
+        end
+      end
+    end
+  end
+  
+  if(Enemy_Hero~=nil and not(Enemy_Hero:IsNull())) then
+    if(not(Enemy_Hero:IsAlive())) then
+      enemy_hide=false;
+    end
+  end
+  
+  if(DrowRanger:IsChanneling()) then
+    return;
+  end
+  
+  if(CanDropItems()) then
+    DropItems();
+    return;
+  end
+  
+  if(GetNearbyRune()) then
+    GoForRune(Rune_to_get);
+    return;
+  end
+  
+  if(DotaTime()<1) then
+    StartGame();
+    return;
+  end
+
+  if(Game_State=="early") then EarlyGame(); end
+ 
+  if(Game_State=="ganking") then GangkingGame(); end
+  
+  if(Game_State=="mid") then MidGame(); end
+ 
+  if(Game_State=="late") then LateGame(); end
+ 
+ 
+end
+----------------------------------------------------
+ 
+function StartGame()
+
+  if(EnemiesHaveMajority()) then
+    DrowRanger:Action_MoveDirectly(ClosestAliveMidTurret());
+  end
+
+  if(CanPoke()) then
+    --DebugDrawText( 100.0, 100.0, "POKE" , 255, 0, 0);
+    Poke(Enemy_Hero);
+    return;
+  end
+  
+  DrowRanger:Action_MoveDirectly(MyBountyTop);
+  
+  if(MyTeam==2) then
+    DrowRanger:Action_PickUpRune( RUNE_BOUNTY_1 )
+  else
+    DrowRanger:Action_PickUpRune( RUNE_BOUNTY_4 )
+  end
+  
+end
+
+function EarlyGame()
+
+  if(Level > 5) then
+    ganking_time=DotaTime();
+    Game_State="ganking";
+  end
+
+  if(game_style==1) then  
+    AggressiveEarlyGame();
+    return;
+  else
+    DefensiveEarlyGame();
+    return;
+  end
+  
+end
+
+function GangkingGame()
+  
+  if(DotaTime() > 1200) then
+    ganking_time=1/0;
+    Game_State="mid";
+  end
+  
+  if(CanGiveAura())then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "AURA") , 255, 0, 0);
+    GiveAura();
+    return;
+  end
+  
+  if(MeCloseToDeath() or Going_back) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "RESTORE") , 255, 0, 0);
+    RestoreHp();
+    return;
+  end
+  
+  if(IsTeamfightSomewhere()) then
+    --DebugDrawText( 100.0, 150.0, ("Actual player action: " .. "GO TO TEAMFIGHT") , 255, 0, 0);
+    GoToTeamfight();
+    return;
+  end
+      
+  if(this_time_ganking) then
+    --DebugDrawText( 100.0, 150.0, ("Actual player action: " .. "GANK") , 255, 0, 0);
+    Gank();
+    return;
+  end
+  
+  if(EnemiesHaveMajority()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "MAJORITY DETECTED") , 255, 0, 0);
+    RunToTurret();
+    return;
+  end
+  
+  if(AttackedByTurret()) then
+    --DebugDrawText( 100.0, 100.0, "RUN" , 255, 0, 0);
+    RunAwayFromTurret();
+    return;
+  end
+    
+  if(EnemyCloseToDeath() or enemy_hide) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "KILL") , 255, 0, 0);
+    TryToKill(Enemy_Hero);
+    return;
+  end
+  
+  if(CanInstaFarm()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "FARM") , 255, 0, 0);
+    InstaFarm(Creep_target);
+    return;
+  end
+  
+  if(ganking_time<=DotaTime()) then
+    --DebugDrawText( 100.0, 150.0, ("Actual player action: " .. "GANK") , 255, 0, 0);
+    ganking_time=320+DotaTime();
+    this_time_ganking=true;
+    lane_to_gank=BetterLaneToGank();
+    go_to_gank=true;
+    Gank();
+    return;
+  end
+  
+    if(CanPushTurret()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "PUSH") , 255, 0, 0);
+    PushTurret(Enemy_turret);
+    return;
+  end
+  
+  if(AttackedByCreep()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "HIDE") , 255, 0, 0);
+    HideBehindCreeps();
+    return;
+  end
+  
+  if(CanDeny()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "DENY") , 255, 0, 0);
+    Deny(Creep_target);
+    return;
+  end
+  
+  if(CanPoke()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "POKE") , 255, 0, 0);
+    Poke(Enemy_Hero);
+    return;
+  end
+  
+  if(CanTakeRune()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "RUNE") , 255, 0, 0);
+    GoForRune(Rune_to_get);
+    return;
+  end
+  
+  if(CanAttackCreep()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "FARM") , 255, 0, 0);
+    InstaFarm(Creep_target);
+    return;
+  end
+  
+  --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "POSITION") , 255, 0, 0);
+  TakeBetterPosition();
+    
+end
+
+function MidGame()
+
+
+  if(DotaTime()>2400) then
+    Game_State="late";
+    return;
+  end
+
+  if(CanGiveAura())then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "AURA") , 255, 0, 0);
+    GiveAura();
+    return;
+  end
+
+  if(EnemiesHaveMajority()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "MAJORITY DETECTED") , 255, 0, 0);
+    RunToTurret();
+    return;
+  end
+  
+  if(MeCloseToDeath() or Going_back) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "RESTORE") , 255, 0, 0);
+    RestoreHp();
+    return;
+  end
+  
+  if(EnemyCloseToDeath() or enemy_hide) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "KILL") , 255, 0, 0);
+    TryToKill(Enemy_Hero);
+    return;
+  end
+  
+  if(IsTeamfightSomewhere()) then
+    --DebugDrawText( 100.0, 150.0, ("Actual player action: " .. "GO TO TEAMFIGHT") , 255, 0, 0);
+    GoToTeamfight();
+    return;
+  end
+  
+  if(rest_after_pushing) then
+    
+    if(TurretToProtect()) then
+      --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "PROTECT TURRET") , 255, 0, 0);
+      ProtectTurret();
+      return;
+    end
+ 
+    if(SeekOpponents() or hunting ) then
+      --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "HUNTING") , 255, 0, 0);
+      HuntOnEnemy();
+      return;
+    else
+      --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "JUNGLE") , 255, 0, 0);
+      GoToJungle();
+      return;
+    end
+  end
+  
+  if(CanPushTurret()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "PUSH") , 255, 0, 0);
+    PushTurret(Enemy_turret);
+    return;
+  end
+  
+  if((CanPushImportantTurret() or go_to_push or pushing_lane)) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "PUSH IMPORTANT") , 255, 0, 0);
+    PushImportantTurret();
+    return;
+  end
+  
+  if(CanAttackCreep()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "FARM") , 255, 0, 0);
+    InstaFarm(Creep_target);
+    return;
+  end
+  
+end
+
+function LateGame()
+
+if(CanGiveAura())then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "AURA") , 255, 0, 0);
+    GiveAura();
+    return;
+  end
+
+  if(EnemiesHaveMajority()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "MAJORITY DETECTED") , 255, 0, 0);
+    RunToTurret();
+    return;
+  end
+  
+  if(MeCloseToDeath() or Going_back) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "RESTORE") , 255, 0, 0);
+    RestoreHp();
+    return;
+  end
+  
+  if(EnemyCloseToDeath() or enemy_hide) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "KILL") , 255, 0, 0);
+    TryToKill(Enemy_Hero);
+    return;
+  end
+  
+  if(IsTeamfightSomewhere()) then
+    --DebugDrawText( 100.0, 150.0, ("Actual player action: " .. "GO TO TEAMFIGHT") , 255, 0, 0);
+    GoToTeamfight();
+    return;
+  end
+   
+  if(CanPushTurret()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "PUSH") , 255, 0, 0);
+    PushTurret(Enemy_turret);
+    return;
+  end
+  
+  if((CanPushImportantTurret() or go_to_push or pushing_lane)) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "PUSH IMPORTANT") , 255, 0, 0);
+    PushImportantTurret();
+    return;
+  end
+  
+end
+  
+-- Early Game decision trees
+
+function AggressiveEarlyGame()
+
+  if(EnemiesHaveMajority()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "MAJORITY DETECTED") , 255, 0, 0);
+    RunToTurret(Enemy_Hero);
+    return;
+  end
+  
+  if(AttackedByTurret()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "RUN AWAY") , 255, 0, 0);
+    RunAwayFromTurret();
+    return;
+  end
+  
+  if(EnemyCloseToDeath() or enemy_hide) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "KILL") , 255, 0, 0);
+    TryToKillAlone(Enemy_Hero);
+    return;
+  end
+  
+  if(MeCloseToDeath() or Going_back) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "RESTORE") , 255, 0, 0);
+    RestoreHp();
+    return;
+  end
+  
+  if(CanInstaFarm()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "FARM") , 255, 0, 0);
+    InstaFarm(Creep_target);
+    return;
+  end
+  
+  if(AttackedByCreep()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "HIDE") , 255, 0, 0);
+    HideBehindCreeps();
+    return;
+  end
+  
+  if(CanPushTurret()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "PUSH") , 255, 0, 0);
+    PushTurretAlone(Enemy_turret);
+    return;
+  end
+  
+  if(CanTakeRune()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "RUNE") , 255, 0, 0);
+    GoForRune(Rune_to_get);
+    return;
+  end
+   
+  if(CanDeny()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "DENY") , 255, 0, 0);
+    Deny(Creep_target);
+    return;
+  end
+  
+  if(CanPoke()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "POKE") , 255, 0, 0);
+    Poke(Enemy_Hero);
+    return;
+  end
+    
+  
+  --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "POSITION") , 255, 0, 0);
+  TakeBetterPosition();
+
+end
+
+function DefensiveEarlyGame()
+
+  if(EnemiesHaveMajority()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "MAJORITY DETECTED") , 255, 0, 0);
+    RunToTurret();
+    return;
+  end
+  
+  if(AttackedByTurret()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "RUN AWAY") , 255, 0, 0);
+    RunAwayFromTurret();
+    return;
+  end
+  
+  if(MeCloseToDeath() or Going_back) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "RESTORE") , 255, 0, 0);
+    RestoreHp();
+    return;
+  end
+  
+  if(EnemyCloseToDeath() or enemy_hide) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "KILL") , 255, 0, 0);
+    TryToKillAlone(Enemy_Hero);
+    return;
+  end
+  
+  if(AttackedByCreep()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "HIDE") , 255, 0, 0);
+    HideBehindCreeps();
+    return;
+  end
+  
+  if(CanInstaFarm()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "FARM") , 255, 0, 0);
+    InstaFarm(Creep_target);
+    return;
+  end
+   
+  if(CanPushTurret()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "PUSH") , 255, 0, 0);
+    PushTurretAlone(Enemy_turret);
+    return;
+  end
+  
+  if(CanTakeRune()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "RUNE") , 255, 0, 0);
+    GoForRune(Rune_to_get);
+    return;
+  end
+  
+  if(CanDeny()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "DENY") , 255, 0, 0);
+    Deny(Creep_target);
+    return;
+  end
+  
+  if(CanPoke()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "POKE") , 255, 0, 0);
+    Poke(Enemy_Hero);
+    return;
+  end
+    
+  
+  --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "POSITION") , 255, 0, 0);
+  TakeBetterPosition();
+ 
+end
+ 
+-- Early Game boolean functions: 
+
+function EnemiesHaveMajority()
+  Enemies = DrowRanger:GetNearbyHeroes(1599, true, BOT_MODE_NONE);
+  Allies = DrowRanger:GetNearbyHeroes(1599, false, BOT_MODE_NONE);
+  
+  if(Enemies[2]==nil) then
+    return false;
+  end
+  
+  if(GetUnitToUnitDistance(Enemies[1], ClosestFriendlyTurret()) <1200) then
+    return false;
+  end
+   
+  if(table.getn(Enemies)>(table.getn(Allies) + game_style)) then
+    if(Enemies[1]:GetUnitName()~=Enemies[2]:GetUnitName()) then
+      Enemy_Hero=Enemies[1];
+      return true;
+    end
+  end
+  
+  return false;
+end
+
+function MeCloseToDeath()
+
+  if(DrowRanger:GetHealthRegen() > 8 and DrowRanger:DistanceFromFountain()>1000 and (DrowRanger:GetHealth() / DrowRanger:GetMaxHealth()) * 100 > 20) then
+    return false;
+  end
+
+  tango = nil;
+  tango = DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_tango"));
+  
+  if(tango==nil)then
+    if((DrowRanger:GetHealth() / DrowRanger:GetMaxHealth()) * 100 < 22) then
+      return true;
+    end
+    return false;
+  end
+  
+  if((DrowRanger:GetHealth() / DrowRanger:GetMaxHealth()) * 100 < 65) then
+    return true;
+  end
+  return false;
+end
+
+function EnemyCloseToDeath()
+  if(enemy_hide and Enemy_Hero~=nil) then
+    if(not(Enemy_Hero:IsNull())) then
+      if(Enemy_Hero:GetHealth() > 5*Attack) then
+        enemy_hide=false;
+      end
+    end
+  end
+  
+  enemies_array = DrowRanger:GetNearbyHeroes(2*Range, true, BOT_MODE_NONE);
+  if(enemies_array[1] ~= nil) then
+    for enemy_hero_counter = 1, table.getn(enemies_array) do
+      if(enemies_array[enemy_hero_counter]:GetHealth() < 4*Attack and enemies_array[enemy_hero_counter]:CanBeSeen()) then
+        --DebugDrawText( 1000.0, 550.0, ("Foe Hp: " .. tostring("WIDZE")) , 255, 0, 0);
+        Enemy_Hero=enemies_array[enemy_hero_counter];
+        enemy_hide = true;
+        enemy_hideout = Enemy_Hero:GetLocation();
+        enemy_hp_remembered = Enemy_Hero:GetHealth();
+        return true;
+      end
+      if(enemy_hp_remembered ~= nil) then
+        if(not(enemies_array[enemy_hero_counter]:CanBeSeen()) and enemy_hp_remembered<4*Attack) then
+          return true;
+        end
+      end
+    end
+  end
+  return false;
+end
+
+function CanInstaFarm()
+  creep_array = DrowRanger:GetNearbyLaneCreeps(Range, true);
+  for creep_counter = 1, table.getn(creep_array) do
+    if((creep_array[creep_counter]:GetHealth() < Real_Damage(creep_array[creep_counter]:GetArmor(), DrowRanger:GetAttackDamage()) + (GetUnitToUnitDistance(creep_array[creep_counter], DrowRanger) / 100))) then  
+      Creep_target = creep_array[creep_counter];
+      return true;
+    end
+  end
+  return false;
+end
+    
+function CanAttackCreep()
+  creep_array = DrowRanger:GetNearbyLaneCreeps(1599, true);
+  if(creep_array[1]~=nil)then
+    Creep_target=creep_array[1];
+    return true;
+  end
+  return false;
+end    
+    
+function CanAttackHero()
+  Enemies = DrowRanger:GetNearbyHeroes(1.5*Range, true, BOT_MODE_NONE);
+  if(Enemies[1]~=nil)then
+    Enemy_Hero=Enemies[1];
+    return true;
+  end
+  return false;
+end  
+    
+function AttackedByTurret()
+
+  if(DrowRanger:TimeSinceDamagedByTower()<1.2) then
+    return true;
+  end
+
+  turret = ClosestEnemyTurret();
+  
+  if(not(turret:IsTower())) then
+    return false;
+  end
+  
+  creep_array = DrowRanger:GetNearbyLaneCreeps(1000, false);
+    
+  if(GetUnitToUnitDistance(DrowRanger, turret)<1000) then 
+    creep_checker=0;
+    distance = GetUnitToUnitDistance(DrowRanger, turret)+50;
+  
+    for creep_counter = 1, table.getn(creep_array) do
+      if(GetUnitToUnitDistance(creep_array[creep_counter], turret) <= distance) then
+        creep_checker=creep_checker+1;
+        if(creep_checker>2) then
+          return false;
+        end
+      end
+    end
+    
+    return true;
+    
+  end
+  
+  hero_array = DrowRanger:GetNearbyHeroes(1000, false, BOT_MODE_NONE);
+    
+  if(GetUnitToUnitDistance(DrowRanger, turret)<1000) then 
+    hero_checker=1;
+    distance = GetUnitToUnitDistance(DrowRanger, turret)+50;
+  
+    for hero_counter = 1, table.getn(hero_array) do
+      if(GetUnitToUnitDistance(hero_array[hero_counter], turret) <= distance) then
+        hero_checker=hero_checker+1;
+        if(creep_checker>1) then
+          return false;
+        end
+      end
+    end
+    
+    return true;
+    
+  end
+  
+  return false;
+end
+
+function CanPushTurret()
+  turrets = DrowRanger:GetNearbyTowers(Range, true);
+  barracks = DrowRanger:GetNearbyBarracks( Range, true );
+  ancient=GetAncient(EnemyTeam);
+  if(not(ancient:IsInvulnerable()) or not(ancient:IsAttackImmune())) then
+    if(GetUnitToUnitDistance(DrowRanger, ancient) < Range) then
+      Enemy_turret=ancient;
+      
+      if(Old_Enemy_Turret:IsNull()) then
+        Old_Enemy_Turret=Enemy_turret;
+      else
+        if(Enemy_turret~=Old_Enemy_Turret or Old_Enemy_Turret==1) then
+          Old_Enemy_Turret=Enemy_turret;
+          rest_after_pushing=true;
+        end
+      end
+      
+      return true;
+    end
+  end
+  
+  if(turrets[1] ~= nil and barracks[1] ~= nil) then
+    if(GetUnitToUnitDistance(DrowRanger, turrets[1]) < GetUnitToUnitDistance(DrowRanger, barracks[1])) then
+      Enemy_turret = turrets[1];
+      
+      if(Old_Enemy_Turret:IsNull()) then
+        Old_Enemy_Turret=Enemy_turret;
+      else
+        if(Enemy_turret~=Old_Enemy_Turret or Old_Enemy_Turret==1) then
+          Old_Enemy_Turret=Enemy_turret;
+          rest_after_pushing=true;
+        end
+      end
+      
+      return true;
+    else
+      Enemy_turret = barracks[1];
+      
+      if(Old_Enemy_Turret:IsNull()) then
+        Old_Enemy_Turret=Enemy_turret;
+      else
+        if(Enemy_turret~=Old_Enemy_Turret or Old_Enemy_Turret==1) then
+          Old_Enemy_Turret=Enemy_turret;
+          rest_after_pushing=true;
+        end
+      end
+      
+      return true;
+    end
+  end
+  
+  if(turrets[1] ~= nil) then
+    Enemy_turret = turrets[1];
+    
+    if(Old_Enemy_Turret:IsNull()) then
+      Old_Enemy_Turret=Enemy_turret;
+    else
+      if(Enemy_turret~=Old_Enemy_Turret or Old_Enemy_Turret==1) then
+        Old_Enemy_Turret=Enemy_turret;
+        rest_after_pushing=true;
+      end
+    end
+     
+    return true;
+  end
+  
+  if(barracks[1] ~= nil) then
+    Enemy_turret = barracks[1];
+    
+    if(Old_Enemy_Turret:IsNull()) then
+      Old_Enemy_Turret=Enemy_turret;
+    else
+      if(Enemy_turret~=Old_Enemy_Turret or Old_Enemy_Turret==1) then
+        Old_Enemy_Turret=Enemy_turret;
+        rest_after_pushing=true;
+      end
+    end
+   
+    return true;
+  end
+  return false;
+end
+
+function AttackedByCreep()
+  if(Mid_Opponent~=nil) then
+    if(not(Mid_Opponent:IsNull())) then
+      if(DrowRanger:TimeSinceDamagedByCreep()<1 or (DrowRanger:TimeSinceDamagedByAnyHero()<1 and not(GetSelectedHeroName(Mid_Opponent:GetPlayerID())=="npc_dota_hero_viper"))) then
+        return true;
+      end
+    end
+  end
+  
+  if(DrowRanger:TimeSinceDamagedByCreep()<1) then
+    return true;
+  end
+  
+  return false;
+end
+
+function CanDeny()
+  creep_array = DrowRanger:GetNearbyLaneCreeps(Range, false);
+  for creep_counter = 1, table.getn(creep_array) do
+    if((creep_array[creep_counter]:GetHealth()  < Real_Damage(creep_array[creep_counter]:GetArmor(), DrowRanger:GetAttackDamage()) + (GetUnitToUnitDistance(creep_array[creep_counter], DrowRanger)) / 100)) then  
+      Creep_target = creep_array[creep_counter];
+      return true;
+    end
+  end
+  return false;
+end
+  
+function CanPoke()
+  enemies_array = DrowRanger:GetNearbyHeroes(1200, true, BOT_MODE_NONE);
+  if(enemies_array[1] ~= nil) then
+    Enemy_Hero=enemies_array[1];
+    return true;
+  end
+  return false;
+end
+
+function CanTakeRune()
+
+  if(DotaTime()>rune_timer) then
+    rune_checker=false;
+  end
+  
+  if(rune_checker) then 
+    return false;
+  end
+  
+  rune_checker=true;
+  rune_timer=DotaTime()+120;
+  
+  if(GetUnitToLocationDistance(DrowRanger, GetRuneSpawnLocation(RUNE_POWERUP_1)) < GetUnitToLocationDistance(DrowRanger, GetRuneSpawnLocation(RUNE_POWERUP_2))) then
+    if(GetRuneStatus(RUNE_POWERUP_1) ~= 2) then
+      Rune_to_get = RUNE_POWERUP_1;
+      return true;
+    end
+  end
+  if(GetRuneStatus(RUNE_POWERUP_2) ~= 2) then
+    Rune_to_get = RUNE_POWERUP_2;
+    return true;
+  end
+  return false;
+end
+
+-- Early Game activity functions: 
+
+function RunToTurret(target)
+  if(Level > 7 and target~=nil) then
+    if(GetUnitToUnitDistance(DrowRanger, target) < 450 and DrowRanger:GetMana() > 200 and not(target:IsMagicImmune()) and (Silence:GetCooldownTimeRemaining()==0)) then
+       DrowRanger:Action_UseAbilityOnLocation(Silence, target:GetLocation());
+      return;
+    end
+  end
+
+  DrowRanger:Action_MoveToUnit(ClosestFriendlyTurret());
+  return;
+end
+    
+function RestoreHp()
+  if(DrowRanger:GetHealthRegen() > 8 and DrowRanger:DistanceFromFountain()>1000) then
+    DrowRanger:Action_MoveToUnit(ClosestFriendlyTurret());
+    return;
+  end
+  
+  if((DrowRanger:GetHealth() / DrowRanger:GetMaxHealth()) * 100 < 15) then
+    Going_back=true;
+  end
+  
+  tango=false;
+  if(Going_back) then
+    GoToBase();
+    return;
+  end;
+  
+  tango = DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_tango"));
+  
+  if(tango ~= false) then
+    if(GetUnitToUnitDistance(DrowRanger,ClosestFriendlyTurret()) < 1000 and DrowRanger:GetNearbyTrees(1599)~=nil) then
+      tree = DrowRanger:GetNearbyTrees(1599)[1];
+      if(tree ~= nil) then
+        DrowRanger:Action_UseAbilityOnTree(tango,tree);
+        return;
+      end
+    else
+      DrowRanger:Action_MoveToUnit(ClosestFriendlyTurret());
+      return;
+    end
+  end
+  have_tango=false;
+  Going_back=true;
+  GoToBase();
+  return;
+end
+
+function GoToBase()
+
+  if(DrowRanger:GetHealth() >= DrowRanger:GetMaxHealth()*0.75 and DrowRanger:DistanceFromFountain()>5000) then
+    Going_back = false;
+    return;
+  end 
+
+  if(DrowRanger:GetHealth() == DrowRanger:GetMaxHealth()) then
+    Going_back = false;
+    return;
+  end 
+  
+  shadow_blade=nil;
+  shadow_blade=DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_invis_sword"));
+  if(shadow_blade==nil) then
+    shadow_blade=DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_silver_edge"));
+  end
+  
+  if(shadow_blade~=nil) then
+    if(shadow_blade:GetCooldownTimeRemaining()==0 and DrowRanger:GetMana() > 75) then
+      DrowRanger:Action_UseAbility(shadow_blade);
+      return;
+    end
+  end
+  
+  black_king_bar=nil;
+  black_king_bar=DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_black_king_bar"));
+  if(black_king_bar~=nil) then
+    if(black_king_bar:GetCooldownTimeRemaining()==0) then
+      DrowRanger:Action_UseAbility(black_king_bar);
+      return;
+    end
+  end
+  
+  
+  DrowRanger:Action_MoveDirectly(MyShop);
+  return;
+end
+
+function TryToKillAlone(target)
+  if(target:IsNull() or enemy_hideout==nil) then
+    enemy_hide=false;
+    return;
+  end
+  
+  if(not(target:CanBeSeen()) and enemy_hideout~=nil and enemy_hide) then
+    if(GetUnitToLocationDistance(DrowRanger, enemy_hideout) < 10 or GetUnitToLocationDistance(DrowRanger, enemy_hideout) > 1000) then
+      enemy_hide=false;
+    end
+    DrowRanger:Action_MoveDirectly(enemy_hideout);
+    return;
+  end
+
+  if(Level > 5) then
+    if(GetUnitToUnitDistance(DrowRanger, target) < 450 and DrowRanger:GetMana() > 200 and not(target:IsMagicImmune()) and (Silence:GetCooldownTimeRemaining()==0)) then
+       DrowRanger:Action_UseAbilityOnLocation(Silence, target:GetLocation());
+      return;
+    end
+  end
+  if(DrowRanger:GetMana() > 12 and Level > 1 and not(target:IsMagicImmune()))then
+    DrowRanger:Action_UseAbilityOnEntity(Frost_Arrow, target);
+    return;
+  end
+  DrowRanger:Action_AttackUnit(target, false);
+  return;
+end
+
+function TryToKill(target)
+  if(target:IsNull() or enemy_hideout==nil) then
+    enemy_hide=false;
+    return;
+  end
+  if(not(target:CanBeSeen()) and enemy_hideout~=nil and enemy_hide) then
+    if(GetUnitToLocationDistance(DrowRanger, enemy_hideout) < 10 or GetUnitToLocationDistance(DrowRanger, enemy_hideout) > 1000) then
+      enemy_hide=false;
+    end
+    DrowRanger:Action_MoveDirectly(enemy_hideout);
+    return;
+  end
+
+  if(Ping_timer<DotaTime()) then
+    Ping_timer=DotaTime()+20;
+    DrowRanger:ActionImmediate_Ping( target:GetLocation()[1], target:GetLocation()[2], true );
+    return;
+  end
+  
+  black_king_bar=nil;
+  black_king_bar=DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_black_king_bar"));
+  if(black_king_bar~=nil) then
+    if(black_king_bar:GetCooldownTimeRemaining()==0) then
+      DrowRanger:Action_UseAbility(black_king_bar);
+      return;
+    end
+  end
+  
+  if(Level > 7) then
+    if(GetUnitToUnitDistance(DrowRanger, target) < 450 and DrowRanger:GetMana() > 200 and not(target:IsMagicImmune()) and (Silence:GetCooldownTimeRemaining()==0)) then
+       DrowRanger:Action_UseAbilityOnLocation(Silence, target:GetLocation());
+      return;
+    end
+  end
+  if(DrowRanger:GetMana() > 12 and Level > 1 and not(target:IsMagicImmune()))then
+    DrowRanger:Action_UseAbilityOnEntity(Frost_Arrow, target);
+    return;
+  end
+  DrowRanger:Action_AttackUnit(target, false);
+  return;
+end
+
+function InstaFarm(target)
+  DrowRanger:Action_AttackUnit(target, false);
+  return;
+end
+
+function RunAwayFromTurret()
+  DrowRanger:Action_MoveDirectly(MyShop);
+  return;
+end
+
+function PushTurretAlone(turret)
+  if(turret==nil) then
+    return;
+  end
+  DrowRanger:Action_AttackUnit(turret, false);
+  return;
+end
+
+function PushTurret(turret)
+  if(turret==nil) then
+  
+    return;
+  end
+   if(Ping_timer<DotaTime()) then
+    Ping_timer=DotaTime()+50;
+    DrowRanger:ActionImmediate_Ping( target:GetLocation()[1], target:GetLocation()[2], true );
+    return;
+  end
+  DrowRanger:Action_AttackUnit(turret, false);
+  return;
+end
+
+function HideBehindCreeps()
+  creep_array = DrowRanger:GetNearbyLaneCreeps(1200, false);
+  distance = GetUnitToUnitDistance(DrowRanger, ClosestFriendlyTurret());
+  counter=1;
+  creep_flag=false;
+  if(creep_array[1]==nil) then
+    DrowRanger:Action_MoveDirectly(ClosestFriendlyTurret():GetLocation() + Vector(300*team_changer, 300*team_changer, 0));
+    return;
+  end
+  
+  for creep_counter = 1, table.getn(creep_array) do
+    if(GetUnitToUnitDistance(creep_array[creep_counter], GetAncient(MyTeam)) < distance) then
+      creep_flag=true;
+      distance = GetUnitToUnitDistance(creep_array[creep_counter], GetAncient(MyTeam));
+      counter = creep_counter;
+    end
+  end
+  if(creep_flag) then
+    DrowRanger:Action_MoveDirectly(creep_array[counter]:GetLocation() + Vector(300*team_changer, 300*team_changer, 0));
+    return;
+  end
+  
+  DrowRanger:Action_MoveDirectly(ClosestFriendlyTurret():GetLocation() + Vector(300*team_changer, 300*team_changer, 0));
+  return;
+end 
+
+function Deny(target)
+  DrowRanger:Action_AttackUnit(target, false);
+  return;
+end
+
+function Poke(target)
+  if(DrowRanger:GetMana()*2 > DrowRanger:GetMaxMana() and not(target:IsMagicImmune()) and Level > 1)then
+    DrowRanger:Action_UseAbilityOnEntity(Frost_Arrow, target);
+    return;
+  end
+  DrowRanger:Action_AttackUnit(target, false);
+  return;
+end
+
+function GoForRune(rune)
+  if(DrowRanger:DistanceFromFountain()<1000) then
+    tp_scroll=nil;
+    
+    tp_scroll = DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_tpscroll"));
+    
+    if(tp_scroll ~= nil) then
+      
+      DrowRanger:Action_UseAbilityOnLocation( tp_scroll, ClosestAliveMidTurret():GetLocation() + Vector(100*team_changer, 100*team_changer, 0));
+      return;
+    end
+  end
+  
+  if(GetUnitToLocationDistance(DrowRanger, GetRuneSpawnLocation(rune)) < 10) then
+    DrowRanger:Action_PickUpRune(rune);
+    return;
+  end
+  DrowRanger:Action_MoveDirectly(GetRuneSpawnLocation(rune));
+  return;
+end
+
+function TakeBetterPosition()
+  if(DrowRanger:DistanceFromFountain()<2000) then
+    tp_scroll=nil;
+    
+    tp_scroll = DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_tpscroll"));
+    
+    if(tp_scroll ~= nil) then
+      
+      DrowRanger:Action_UseAbilityOnLocation( tp_scroll, ClosestAliveMidTurret():GetLocation() + Vector(100*team_changer, 100*team_changer, 0));
+      return;
+    end
+  end
+  
+  creep_array = DrowRanger:GetNearbyLaneCreeps(1599, false);
+  distance = 1/0;
+  counter=1;
+  if(creep_array[1] == nil) then
+    DrowRanger:Action_MoveToUnit(ClosestAliveMidTurret());
+    return;
+  end
+ 
+  DrowRanger:Action_MoveToUnit(creep_array[1]);
+  
+  return;
+end
+
+-- Ganking Phase functions
+
+function GoToTeamfight()
+  if(GetUnitToUnitDistance(Friend_in_teamfight, ClosestAliveBotTurret()) < 3000 and GetUnitToUnitDistance(Friend_in_teamfight, DrowRanger) > 5000) then
+   
+    tp_scroll=nil;
+    tp_scroll = DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_tpscroll")); 
+    if(tp_scroll ~= nil) then
+      DrowRanger:Action_UseAbilityOnLocation( tp_scroll, ClosestAliveBotTurret():GetLocation() + Vector(-50*team_changer, -50*team_changer, 0));
+      return;
+    end
+  end
+  
+  if(GetUnitToUnitDistance(Friend_in_teamfight, ClosestAliveMidTurret()) < 3000 and GetUnitToUnitDistance(Friend_in_teamfight, DrowRanger) > 5000) then
+   
+    tp_scroll=nil;
+    tp_scroll = DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_tpscroll")); 
+    if(tp_scroll ~= nil) then
+      DrowRanger:Action_UseAbilityOnLocation( tp_scroll, ClosestAliveMidTurret():GetLocation() + Vector(-50*team_changer, -50*team_changer, 0));
+      return;
+    end
+  end
+  
+  if(GetUnitToUnitDistance(Friend_in_teamfight, ClosestAliveTopTurret()) < 3000 and GetUnitToUnitDistance(Friend_in_teamfight, DrowRanger) > 5000) then
+   
+    tp_scroll=nil;
+    tp_scroll = DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_tpscroll")); 
+    if(tp_scroll ~= nil) then
+      DrowRanger:Action_UseAbilityOnLocation( tp_scroll, ClosestAliveTopTurret():GetLocation() + Vector(-50*team_changer, -50*team_changer, 0));
+      return;
+    end
+  end
+  
+  DrowRanger:Action_MoveToUnit(Friend_in_teamfight);
+  return;
+end
+
+function CanGiveAura()
+  if(Aura:GetCooldownTimeRemaining()==0) then
+    return true;
+  end
+  return false;
+end
+
+function TurretToProtect()
+  top = ClosestAliveTopTurret();
+  mid = ClosestAliveMidTurret();
+  bot = ClosestAliveBotTurret();
+  
+  if(top:GetNearbyHeroes(1000, true, BOT_MODE_NONE) ~= nil and top:GetNearbyHeroes(1000, false, BOT_MODE_NONE) ~= nil) then
+    if(table.getn(top:GetNearbyHeroes(1000, true, BOT_MODE_NONE)) > table.getn((top:GetNearbyHeroes(1000, false, BOT_MODE_NONE) + game_style + 1)) and GetUnitToUnitDistance(DrowRanger, top)<12000) then
+      Friendly_turret=top;
+      return true;
+    end
+  end
+  
+  if(bot:GetNearbyHeroes(1000, true, BOT_MODE_NONE) ~= nil and bot:GetNearbyHeroes(1000, false, BOT_MODE_NONE) ~= nil) then
+    if(bot:GetNearbyHeroes(1000, true, BOT_MODE_NONE) > (bot:GetNearbyHeroes(1000, false, BOT_MODE_NONE) + game_style) and GetUnitToUnitDistance(DrowRanger, bot)<12000) then
+      Friendly_turret=bot;
+      return true;
+    end
+  end
+  
+  if(mid:GetNearbyHeroes(1000, true, BOT_MODE_NONE) ~= nil and mid:GetNearbyHeroes(1000, false, BOT_MODE_NONE) ~= nil) then
+    if(mid:GetNearbyHeroes(1000, true, BOT_MODE_NONE) > (mid:GetNearbyHeroes(1000, false, BOT_MODE_NONE) + game_style) and GetUnitToUnitDistance(DrowRanger, mid)<12000) then
+      Friendly_turret=mid;
+      return true;
+    end
+  end
+  
+  return false;
+end
+
+function ProtectTurret()
+  if(GetUnitToUnitDistance(DrowRanger, Friendly_turret)>5000) then
+    tp_scroll=nil;
+    tp_scroll = DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_tpscroll")); 
+    if(tp_scroll ~= nil) then
+      DrowRanger:Action_UseAbilityOnLocation( tp_scroll, Friendly_turret:GetLocation() + Vector(-50*team_changer, -50*team_changer, 0));
+      return;
+    end
+  end
+end
+   
+function GiveAura()
+  DrowRanger:Action_UseAbility(Aura);
+  return;
+end
+
+function BetterLaneToGank()
+  hp_bot=9999999;
+  hp_top=9999999;
+
+  enemies_array = ClosestAliveBotTurret():GetNearbyHeroes(1599, true, BOT_MODE_NONE);
+  enemies_array_2 = ClosestEnemyBotAliveTurret():GetNearbyHeroes(1599, false, BOT_MODE_NONE);
+  
+  if(enemies_array ~= nil or enemies_array_2 ~= nil) then
+    hp_bot=0;
+  end
+  
+  if(enemies_array ~= nil) then
+    for hero_counter = 1, table.getn(enemies_array) do
+      if(enemies_array[hero_counter] == nil) then
+        break;
+      end
+      hp_bot=hp_bot+enemies_array[hero_counter]:GetHealth();
+    end
+  end
+  if(enemies_array_2 ~= nil) then  
+    for hero_counter = 1, table.getn(enemies_array_2) do
+      if(enemies_array_2[hero_counter] == nil) then
+        break;
+      end
+      hp_bot=hp_bot+enemies_array[hero_counter]:GetHealth();
+    end
+  end
+  
+  --------------------------------------------------------------
+  
+  enemies_array = ClosestAliveTopTurret():GetNearbyHeroes(1599, true, BOT_MODE_NONE);
+  enemies_array_2 = ClosestEnemyTopAliveTurret():GetNearbyHeroes(1599, false, BOT_MODE_NONE);
+  
+  if(enemies_array ~= nil or enemies_array_2 ~= nil) then
+    hp_top=0;
+  end
+  if(enemies_array ~= nil) then  
+    for hero_counter = 1, table.getn(enemies_array) do
+      if(enemies_array[hero_counter] == nil) then
+        break;
+      end
+      hp_top=hp_top+enemies_array[hero_counter]:GetHealth();
+    end
+  end
+  
+  if(enemies_array_2 ~= nil) then  
+    for hero_counter = 1, table.getn(enemies_array_2) do
+      if(enemies_array_2[hero_counter] == nil) then
+        break;
+      end
+      hp_top=hp_top+enemies_array[hero_counter]:GetHealth();
+    end  
+  end
+  
+
+  if(hp_bot<hp_top) then
+    return "bot"
+  end
+  
+  return "top"
+  
+  end
+  
+function Gank()
+
+  if(EnemiesHaveMajority()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "MAJORITY DETECTED") , 255, 0, 0);
+    RunToTurret();
+    return;
+  end
+
+  if(go_to_gank) then
+    --DebugDrawText( 100.0, 200.0, ("Actual player action: " .. "GO TO GANK") , 255, 0, 0);
+    GoToGank();
+    return
+  end
+  --DebugDrawText( 100.0, 200.0, ("Actual player action: " .. "DO SOMETHING TO GANK") , 255, 0, 0);
+  KillOnGank();
+  return;
+end
+
+function GoToGank()
+  if(GetUnitToUnitDistance(DrowRanger, ClosestEnemyTurret()) < 1500 and GetUnitToLocationDistance(DrowRanger, Middle_Point) > 2500) then
+    time_of_killing=DotaTime()+160;
+    go_to_gank=false;
+  end
+
+  if(lane_to_gank=="top") then
+    if(GetUnitToUnitDistance(DrowRanger, ClosestEnemyTopAliveTurret()) > 6000) then
+      tp_scroll=nil;
+    
+      tp_scroll = DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_tpscroll"));
+      
+      if(tp_scroll ~= nil) then
+        time_of_killing=DotaTime()+160;
+        go_to_gank=false;
+        DrowRanger:Action_UseAbilityOnLocation( tp_scroll, ClosestAliveTopTurret():GetLocation() + Vector(-50*team_changer, -50*team_changer, 0));
+        return;
+      end
+    end
+    
+    if(GetUnitToLocationDistance(DrowRanger, Top_GankingSpot)<50 or (DrowRanger:GetNearbyHeroes(Range*1.5, true, BOT_MODE_NONE)[1]~= nil and GetUnitToUnitDistance(DrowRanger,ClosestAliveMidTurret())>1000)) then
+      time_of_killing=DotaTime()+160;
+      go_to_gank=false;
+    end
+  
+  
+    DrowRanger:Action_MoveDirectly(Top_GankingSpot);
+    return;
+  end
+
+  if(lane_to_gank=="bot") then
+    if(GetUnitToUnitDistance(DrowRanger, ClosestEnemyBotAliveTurret()) > 6000) then
+      tp_scroll=nil;
+    
+      tp_scroll = DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_tpscroll"));
+      
+      if(tp_scroll ~= nil) then
+        time_of_killing=DotaTime()+160;
+        go_to_gank=false;
+        DrowRanger:Action_UseAbilityOnLocation( tp_scroll, ClosestAliveBotTurret():GetLocation() + Vector(-50*team_changer, -50*team_changer, 0));
+        return;
+      end
+    end
+  
+  
+    if(GetUnitToLocationDistance(DrowRanger, Bot_GankingSpot)<50 or (DrowRanger:GetNearbyHeroes(Range*1.5, true, BOT_MODE_NONE)[1]~= nil and GetUnitToUnitDistance(DrowRanger,ClosestAliveMidTurret())>1000)) then
+      time_of_killing=DotaTime()+160;
+      go_to_gank=false;
+    end
+    
+    DrowRanger:Action_MoveDirectly(Bot_GankingSpot);
+    return;
+  end
+  
+end
+  
+function KillOnGank()
+  
+  if(time_of_killing<=DotaTime()) then
+    this_time_ganking=false;
+  end
+  
+  enemies_array = DrowRanger:GetNearbyHeroes(1599, true, BOT_MODE_NONE);
+  if(enemies_array[1] == nil) then
+    if(lane_to_gank=="top") then
+      Enemy_turret=ClosestEnemyTopAliveTurret();
+      TryToPush();
+    end
+    Enemy_turret=ClosestEnemyBotAliveTurret();
+    TryToPush();
+    return
+  end
+  --DebugDrawText( 100.0, 250.0, ("Actual player action: " .. "KILL ON GANK") , 255, 0, 0);
+  
+  if(table.getn(enemies_array) > 1) then
+    if(GetUnitToUnitDistance(enemies_array[1], enemies_array[2]) < 200 and enemies_array[2]:GetHealth()>0) then
+      if(enemies_array[1]:GetHealth()<enemies_array[2]:GetHealth()) then
+        Enemy_Hero=enemies_array[1];
+      else
+        Enemy_Hero=enemies_array[2];
+      end
+    else
+      Enemy_Hero=enemies_array[1];
+    end
+  else
+  
+    Enemy_Hero=enemies_array[1];
+  end
+  enemy_hide = true;
+  enemy_hideout = Enemy_Hero:GetLocation();
+  enemy_hp_remembered = Enemy_Hero:GetHealth();
+  TryToKill(Enemy_Hero);
+  return
+end
+  
+-- Mid Game functions
+
+function CanPushImportantTurret()
+
+  if(rest_after_pushing or go_to_push) then
+    return false;
+  end
+  
+  if(not(pushing_lane)) then
+    go_to_push=true;
+  end
+  
+  top_counter=0;
+  bot_counter=0;
+  mid_counter=0;
+  
+  for i = 1, 5 do
+    if(i ~= 3) then
+      if(GetUnitToLocationDistance(GetTeamMember(i), TopShop) < GetUnitToLocationDistance(GetTeamMember(i), Middle_Point)) then
+        top_counter=top_counter+1;
+      else
+        if(GetUnitToLocationDistance(GetTeamMember(i), BotShop) < GetUnitToLocationDistance(GetTeamMember(i), Middle_Point)) then
+          bot_counter=bot_counter+1;
+        else
+          mid_counter=mid_counter+1;
+        end
+      end
+    end
+  end
+  
+  max_counter = math.max(top_counter, bot_counter, mid_counter);
+  
+  if(max_counter==top_counter and not(ClosestEnemyTopAliveTurret():IsFort())) then
+    Enemy_turret = ClosestEnemyTopAliveTurret();
+    
+    if(Old_Enemy_Turret:IsNull()) then
+      Old_Enemy_Turret=Enemy_turret;
+    else
+      if(Enemy_turret~=Old_Enemy_Turret or Old_Enemy_Turret==1) then
+        Old_Enemy_Turret=Enemy_turret;
+        rest_after_pushing=true;
+      end
+    end
+    
+    lane_to_push="top";
+    return true;
+  end
+  
+  if(max_counter==mid_counter and not(ClosestEnemyMidAliveTurret():IsFort())) then
+    Enemy_turret=ClosestEnemyMidAliveTurret();
+    
+    if(Old_Enemy_Turret:IsNull()) then
+      Old_Enemy_Turret=Enemy_turret;
+    else
+      if(Enemy_turret~=Old_Enemy_Turret or Old_Enemy_Turret==1) then
+        Old_Enemy_Turret=Enemy_turret;
+        rest_after_pushing=true;
+      end
+    end
+      
+    lane_to_push="mid";
+    return true;
+  end
+  
+  lane_to_push="bot";
+  Enemy_turret=ClosestEnemyBotAliveTurret();
+  
+  if(Old_Enemy_Turret:IsNull()) then
+    Old_Enemy_Turret=Enemy_turret;
+  else
+    if(Enemy_turret~=Old_Enemy_Turret or Old_Enemy_Turret==1) then
+      Old_Enemy_Turret=Enemy_turret;
+      rest_after_pushing=true;
+    end
+  end
+  
+  return true;
+end
+
+function PushImportantTurret()
+    
+  if(go_to_push) then    
+    GoToPush();
+    return;
+  end
+  
+  TryToPush();
+  return;
+  
+end
+
+function GoToPush()
+
+  if(GetUnitToUnitDistance(DrowRanger, ClosestEnemyTurret()) < 1500) then
+    go_to_push=false;
+    pushing_lane=true;
+  end
+
+  tp_scroll=nil;
+  tp_scroll = DrowRanger:GetItemInSlot(DrowRanger:FindItemSlot("item_tpscroll"));
+  
+  if(tp_scroll ~= nil) then  
+    
+    if(lane_to_push=="top") then
+      DrowRanger:Action_UseAbilityOnLocation( tp_scroll, ClosestAliveTopTurret():GetLocation() + Vector(-50*team_changer, -50*team_changer, 0));
+      go_to_push=false;
+      pushing_lane=true;
+      return;
+    end
+    
+    if(lane_to_push=="mid") then
+      DrowRanger:Action_UseAbilityOnLocation( tp_scroll, ClosestAliveMidTurret():GetLocation() + Vector(-50*team_changer, -50*team_changer, 0));
+      go_to_push=false;
+      pushing_lane=true;
+      return;
+    end
+    
+    DrowRanger:Action_UseAbilityOnLocation( tp_scroll, ClosestAliveBotTurret():GetLocation() + Vector(-50*team_changer, -50*team_changer, 0));
+    go_to_push=false;
+    pushing_lane=true;
+    return;
+  end
+  
+  if(lane_to_push=="top") then
+    DrowRanger:Action_MoveToUnit(ClosestAliveTopTurret());
+    if(GetUnitToUnitDistance(DrowRanger, ClosestAliveTopTurret()) < 200) then
+      go_to_push=false;
+      pushing_lane=true;
+    end
+    return;
+  end
+  
+  if(lane_to_push=="mid") then
+    DrowRanger:Action_MoveToUnit(ClosestAliveMidTurret());
+    if(GetUnitToUnitDistance(DrowRanger, ClosestAliveMidTurret()) < 200) then
+      go_to_push=false;
+      pushing_lane=true;
+    end
+    return;
+  end
+    
+  DrowRanger:Action_MoveToUnit(ClosestAliveBotTurret());
+  if(GetUnitToUnitDistance(DrowRanger, ClosestAliveBotTurret()) < 200) then
+    go_to_push=false;
+    pushing_lane=true;
+  end
+  return;
+end
+ 
+function TryToPush()
+
+  if(Enemy_turret == nil) then 
+    pushing_lane=false;
+  end
+
+  if(MeCloseToDeath() or Going_back) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "RESTORE") , 255, 0, 0);
+    pushing_lane=false;
+    RestoreHp();
+    return;
+  end
+  
+  if(EnemyCloseToDeath()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "KILL") , 255, 0, 0);
+    TryToKill(Enemy_Hero);
+    return;
+  end
+
+  if(AttackedByTurret()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "RUN") , 255, 0, 0);
+    RunAwayFromTurret();
+    return;
+  end
+  
+  if(CanPushTurret()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "PUSH") , 255, 0, 0);
+    PushTurret(Enemy_turret);
+    return;
+  end
+  
+  if(AttackedByCreep()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "HIDE") , 255, 0, 0);
+    HideBehindCreeps();
+    return;
+  end
+  
+  if(CanAttackHero()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "POKE") , 255, 0, 0);
+    Poke(Enemy_Hero);
+    return;
+  end
+  
+  if(CanAttackCreep()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "FARM") , 255, 0, 0);
+    InstaFarm(Creep_target);
+    return;
+  end
+  
+  if(TurretToProtect()) then
+    --DebugDrawText( 100.0, 100.0, ("Actual player action: " .. "PROTECT TURRET") , 255, 0, 0);
+    ProtectTurret();
+    return;
+  end
+  
+  if(not(Enemy_turret:IsNull())) then
+    if(ClosestAllie()~=nil and Enemy_turret:IsTower() and Game_State=="ganking") then
+      --DebugDrawText( 100.0, 200.0, ("Actual player action: " .. "GO TO CLOSEST ALLIE") , 255, 0, 0);
+      DrowRanger:Action_MoveToUnit(ClosestAllie());
+      return;
+    end
+  end
+  
+  --DebugDrawText( 100.0, 200.0, ("Actual player action: " .. "GO TO TURRET") , 255, 0, 0);
+  DrowRanger:Action_MoveToUnit(Enemy_turret);
+  return;
+  
+end
+    
+function SeekOpponents()
+  
+  enemies_array = DrowRanger:GetNearbyHeroes(1599, true, BOT_MODE_NONE);
+  if(enemies_array[1]~=nil) then
+    Enemy_Hero=enemies_array[1];
+    hunting_place=Enemy_Hero:GetLocation();
+    hunting=true;
+    return true;
+  end
+  return false;
+  
+end
+   
+function HuntOnEnemy()   
+
+  enemies = DrowRanger:GetNearbyHeroes(Range, true, BOT_MODE_NONE);
+  
+  if(enemies[1]~=nil) then
+    Enemy_Hero=enemies[1];
+    enemy_hide = true;
+    enemy_hideout = Enemy_Hero:GetLocation();
+    enemy_hp_remembered = Enemy_Hero:GetHealth();
+    TryToKill(Enemy_Hero);
+    return;
+  end
+  
+  if(GetUnitToLocationDistance(DrowRanger, hunting_place)<100) then
+    if(not(SeekOpponents())) then
+      hunting=false;
+      rest_after_pushing=false;
+      return;
+    end
+  end
+  
+  DrowRanger:Action_MoveDirectly(hunting_place);
+  return;
+  
+end
+
+function GoToJungle()
+  
+  if(DrowRanger:GetNearbyNeutralCreeps(Range)[1]==nil) then
+    now_jungling=false;
+  end
+  
+  if(now_jungling) then
+    Creep_target = DrowRanger:GetNearbyNeutralCreeps(Range)[1];
+    InstaFarm(Creep_target);
+    return;
+  end
+  
+  closest_distance=1/0;
+  closest_spawner=Vector(0,0);
+  
+  for i = 1,table.getn(Jungle) do
+    if (Jungle[i][2]~=1 or Game_State=="late") then
+      tmp_distance=GetUnitToLocationDistance(DrowRanger, Jungle[i][1]);
+      if(tmp_distance<closest_distance) then
+        closest_distance=tmp_distance;
+        closest_spawner=Jungle[i][1];
+      end
+    end
+  end
+  
+  if(GetUnitToLocationDistance(DrowRanger, closest_spawner)<100 and IsLocationVisible(closest_spawner)) then
+    now_jungling=true;
+    if(DrowRanger:GetNearbyNeutralCreeps(400)[1]==nil) then
+      rest_after_pushing=false;
+      now_jungling=false;
+    end
+    Creep_target = DrowRanger:GetNearbyNeutralCreeps(1599)[1];
+    InstaFarm(Creep_target);
+    return;
+  end
+  
+  DrowRanger:Action_MoveDirectly(closest_spawner);
+  return;
+end
