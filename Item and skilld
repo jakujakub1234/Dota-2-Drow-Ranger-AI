@@ -1,0 +1,171 @@
+local DrowRanger = GetBot();
+
+local items_bought=1;
+
+local tp_counter=1;
+
+local secret_courier=false;
+
+local buildTable = {
+
+  --start items
+  
+  "item_tango",
+  "item_slippers",
+  "item_slippers",
+  "item_circlet",
+  "item_branches",
+  "item_recipe_wraith_band",
+  
+  
+  --power treads
+  "item_boots",
+  "item_gloves",
+  "item_boots_of_elves",
+  
+  --dragon lance
+  "item_boots_of_elves",
+  "item_boots_of_elves",
+  "item_ogre_axe",
+  
+  --shadow blade
+  "item_claymore",
+  "item_shadow_amulet",
+  
+  --maelstorm
+  "item_mithril_hammer",
+  "item_javelin",
+  
+  --hurrican pike
+  "item_staff_of_wizardry",
+  "item_ring_of_regen",
+  "item_recipe_force_staff",
+  "item_recipe_hurricane_pike",
+  
+  --black king bar
+  "item_mithril_hammer",
+  "item_ogre_axe",
+  "item_recipe_black_king_bar",
+  
+  --butterfly
+  "item_eagle",
+  "item_quarterstaff",
+  "item_talisman_of_evasion",
+  
+  --mjollnir
+  "item_hyperstone",
+  "item_recipe_mjollnir",
+  
+  --silver edge
+  "item_ultimate_orb",
+  "item_recipe_silver_edge",
+};
+
+local abilities = {
+  "special_bonus_unique_drow_ranger_1",
+  "special_bonus_evasion_25",
+  "special_bonus_agility_10",
+  "special_bonus_all_stats_5",
+  "drow_ranger_marksmanship",
+  "drow_ranger_trueshot",
+  "drow_ranger_frost_arrows",
+  "drow_ranger_wave_of_silence",
+}
+
+function AbilityUpgrade()
+
+  if DrowRanger:GetAbilityPoints() == 0 or #abilities == 0 then
+    return;
+  end
+
+  for i, ability in pairs(abilities) do
+
+    local handle = DrowRanger:GetAbilityByName(ability);
+    if handle ~= nil then
+      if handle:GetLevel() == handle:GetMaxLevel() then
+        table.remove(abilities, i);
+      elseif handle:CanAbilityBeUpgraded() then
+        DrowRanger:ActionImmediate_LevelAbility(ability);
+      end
+    end
+
+  end
+end
+
+function PurchaseItems()
+ 
+  if ( items_bought > 30 ) then
+    DrowRanger:SetNextItemPurchaseValue(0);
+    return;
+  end
+
+  local sNextItem = buildTable[items_bought];
+  DrowRanger:SetNextItemPurchaseValue(GetItemCost(sNextItem));
+
+  local function PurchaseItem()
+    DrowRanger:ActionImmediate_PurchaseItem( sNextItem );
+    items_bought=items_bought+1;
+  end
+  
+  local function PurchaseInSecret()
+    GetCourier(GetNumCouriers() -1):ActionImmediate_PurchaseItem( sNextItem );
+    items_bought=items_bought+1;
+  end
+
+  if (DrowRanger:GetGold() >= GetItemCost(sNextItem)) then
+    if (IsItemPurchasedFromSecretShop(sNextItem)) then
+      if GetCourier(GetNumCouriers() -1):DistanceFromSecretShop() < 200 then
+        secret_courier=false;
+        PurchaseInSecret();
+        DrowRanger:ActionImmediate_Courier(GetCourier(GetNumCouriers() -1), COURIER_ACTION_TRANSFER_ITEMS);
+        return;
+      elseif (GetCourierState(GetCourier(0)) == 1 or GetCourierState(GetCourier(0)) == COURIER_ACTION_SECRET_SHOP or GetCourierState(GetCourier(0)) == COURIER_STATE_IDLE or GetCourierState(GetCourier(0)) == COURIER_STATE_RETURNING_TO_BASE) then
+        secret_courier=true;
+        DrowRanger:ActionImmediate_Courier(GetCourier(GetNumCouriers() -1), COURIER_ACTION_SECRET_SHOP);
+        return;
+      end
+    else
+      PurchaseItem();
+      DrowRanger:ActionImmediate_Courier(GetCourier(GetNumCouriers() -1), COURIER_ACTION_TRANSFER_ITEMS);
+    end
+  end
+end
+
+
+
+function PurchaseTpScroll()
+  if(secret_courier) then
+    return;
+  end
+  
+  if(math.floor(DotaTime()) >= 500 * tp_counter) then
+    if(DrowRanger:GetGold() >= GetItemCost("item_tpscroll")) then
+      tp_counter=tp_counter+1
+      DrowRanger:ActionImmediate_PurchaseItem("item_tpscroll");
+    end
+  end
+end
+
+function CallCourier()
+  if(secret_courier) then
+    return;
+  end
+  
+  if(GetCourierState(GetCourier(0)) == 1 or GetCourierState(GetCourier(0)) == COURIER_ACTION_SECRET_SHOP or GetCourierState(GetCourier(0)) == COURIER_STATE_IDLE) then
+    DrowRanger:ActionImmediate_Courier(GetCourier(GetNumCouriers() -1), COURIER_ACTION_TAKE_AND_TRANSFER_ITEMS)
+    return;
+  end
+end
+----------------------------------------------------------------------------------------------------
+
+function ItemPurchaseThink()
+
+  AbilityUpgrade();
+  PurchaseItems();
+  PurchaseTpScroll();
+  CallCourier();
+  
+end
+
+
+----------------------------------------------------------------------------------------------------
